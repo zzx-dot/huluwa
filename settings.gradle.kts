@@ -20,5 +20,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Huluwa"
+rootProject.name = "huluwa"
 include(":app")
