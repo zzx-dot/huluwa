@@ -1,23 +1,18 @@
 package com.example.huluwa.analysis
 
 import android.content.Context
-import android.media.MediaPlayer
-import android.media.MediaRecorder
 import com.example.huluwa.data.HuluwaRepository
 import com.example.huluwa.data.entity.AudioEvent
 import java.io.File
-import java.io.FileInputStream
-import java.io.IOException
-import kotlin.math.log10
 
 class AudioAnalyzer(private val context: Context) {
     private val repository = HuluwaRepository.getInstance(context)
     
     // 默认配置
-    private val DEFAULT_VOLUME_THRESHOLD = 60 // 音量阈值
-    private val DEFAULT_MIN_EVENT_DURATION = 800 // 最短事件时长（毫秒）
-    private val DEFAULT_MERGE_INTERVAL = 1500 // 合并间隔（毫秒）
-    private val WINDOW_SIZE = 200 // 时间窗口大小（毫秒）
+    private val DEFAULT_VOLUME_THRESHOLD = 60
+    private val DEFAULT_MIN_EVENT_DURATION = 800L
+    private val DEFAULT_MERGE_INTERVAL = 1500L
+    private val WINDOW_SIZE = 200
     
     suspend fun analyzeAudio(audioPath: String): List<AudioEvent> {
         // 获取配置参数

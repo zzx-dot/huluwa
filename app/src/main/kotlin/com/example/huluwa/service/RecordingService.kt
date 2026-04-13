@@ -125,7 +125,12 @@ class RecordingService : Service() {
         wakeLock?.release()
 
         // 停止前台服务
-        stopForeground(true)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
         stopSelf()
 
         // 重命名临时文件为正式文件
