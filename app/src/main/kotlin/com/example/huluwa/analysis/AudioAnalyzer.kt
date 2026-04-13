@@ -1,5 +1,5 @@
 package com.example.huluwa.analysis
-
+import android.media.MediaPlayer
 import android.content.Context
 import com.example.huluwa.data.HuluwaRepository
 import com.example.huluwa.data.entity.AudioEvent
@@ -36,21 +36,19 @@ class AudioAnalyzer(private val context: Context) {
             player.setDataSource(audioPath)
             player.prepare()
             
-            val totalDuration = player.duration
-            var currentTime = 0
+            val totalDuration = player.duration.toLong()
+            var currentTime = 0L
             var inEvent = false
             var eventStartTime = 0L
             var eventPeakVolume = 0
-            
+
             while (currentTime < totalDuration) {
-                // 计算当前窗口的音量
-                val volume = calculateVolume(audioPath, currentTime, WINDOW_SIZE)
+                val volume = calculateVolume(audioPath, currentTime.toInt(), WINDOW_SIZE)
                 
                 if (volume > threshold) {
                     if (!inEvent) {
-                        // 开始新事件
                         inEvent = true
-                        eventStartTime = currentTime.toLong()
+                        eventStartTime = currentTime
                         eventPeakVolume = volume
                     } else {
                         // 更新峰值音量
@@ -60,9 +58,8 @@ class AudioAnalyzer(private val context: Context) {
                     }
                 } else {
                     if (inEvent) {
-                        // 结束事件
                         inEvent = false
-                        val eventEndTime = currentTime.toLong()
+                        val eventEndTime = currentTime
                         val eventDuration = eventEndTime - eventStartTime
                         
                         events.add(
@@ -77,7 +74,7 @@ class AudioAnalyzer(private val context: Context) {
                     }
                 }
                 
-                currentTime += WINDOW_SIZE
+                currentTime += WINDOW_SIZE.toLong()
             }
             
             // 处理最后一个事件
