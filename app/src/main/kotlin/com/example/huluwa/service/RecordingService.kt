@@ -25,17 +25,15 @@ import java.io.File
 import java.util.Date
 
 class RecordingService : Service() {
-    private lateinit var mediaRecorder: MediaRecorder
-    private lateinit var audioFile: File
-    private var startTime: Date = Date()
+    private var mediaRecorder: MediaRecorder? = null
+    private var audioFile: File? = null
+    private var startTime: Date? = null
+    private var isRecording = false
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var wakeLock: PowerManager.WakeLock? = null
-
-    override fun onBind(intent: Intent?): IBinder? {
-        return null
-    }
-
     private var saveTimer: Timer? = null
+
+    override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
@@ -46,39 +44,49 @@ class RecordingService : Service() {
     }
 
     private fun startRecording() {
-        // 检测并恢复上一条未完成记录
+        if (isRecording) return
+
         val audioDir = File(filesDir, "audio")
         if (!audioDir.exists()) {
             audioDir.mkdirs()
         }
-        
-        // 查找未完成的录音文件（文件名包含in_progress）
+
         val inProgressFiles = audioDir.listFiles { file ->
             file.name.contains("in_progress")
         }
-        
-        if (inProgressFiles?.isNotEmpty() == true) {
-            // 恢复最近的未完成录音
-            audioFile = inProgressFiles.maxByOrNull { it.lastModified() }!!
+
+        val file = if (inProgressFiles?.isNotEmpty() == true) {
+            inProgressFiles.maxByOrNull { it.lastModified() }!!
         } else {
-            // 创建新的录音文件
-            audioFile = File(audioDir, "recording_${System.currentTimeMillis()}_in_progress.m4a")
+            File(audioDir, "recording_${System.currentTimeMillis()}_in_progress.m4a")
         }
 
-        // 初始化MediaRecorder
-        mediaRecorder = MediaRecorder().apply {
-            setAudioSource(MediaRecorder.AudioSource.MIC)
-            setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-            setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            setAudioSamplingRate(16000)
-            setAudioChannels(1)
-            setAudioEncodingBitRate(48000)
-            setOutputFile(audioFile.absolutePath)
-            prepare()
-            start()
+        try {
+            val recorder = MediaRecorder().apply {
+                setAudioSource(MediaRecorder.AudioSource.MIC)
+                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                setAudioSamplingRate(16000)
+                setAudioChannels(1)
+                setAudioEncodingBitRate(48000)
+                setOutputFile(file.absolutePath)
+                prepare()
+                start()
+            }
+            mediaRecorder = recorder
+            audioFile = file
+            startTime = Date()
+            isRecording = true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            mediaRecorder?.release()
+            mediaRecorder = null
+            audioFile = null
+            stopForegroundCompat()
+            stopSelf()
+            return
         }
 
-        // 获取WakeLock防止系统休眠
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
@@ -87,21 +95,17 @@ class RecordingService : Service() {
             acquire()
         }
 
-        // 启动定期落盘定时器（每60秒）
         saveTimer = Timer()
         saveTimer?.scheduleAtFixedRate(object : TimerTask() {
             override fun run() {
-                // 定期保存录音状态
-                // MediaRecorder会自动处理缓冲区写入，这里主要是确保文件系统缓存刷新
                 try {
-                    // 可以在这里添加其他状态保存逻辑
+                    // placeholder for periodic state save
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
             }
         }, 60000, 60000)
 
-        // 启动前台服务
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(NOTIFICATION_ID, createNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
         } else {
@@ -110,61 +114,96 @@ class RecordingService : Service() {
     }
 
     private fun stopRecording() {
-        try {
-            mediaRecorder.stop()
-            mediaRecorder.release()
-        } catch (e: Exception) {
-            // 处理异常，确保文件保存
+        if (!isRecording) {
+            stopForegroundCompat()
+            stopSelf()
+            return
         }
 
-        // 取消定期落盘定时器
+        val recorder = mediaRecorder
+        val file = audioFile
+        val start = startTime
+
+        isRecording = false
+
+        if (recorder != null) {
+            try {
+                recorder.stop()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                try {
+                    recorder.release()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+        mediaRecorder = null
+
         saveTimer?.cancel()
         saveTimer = null
 
-        // 释放WakeLock
-        wakeLock?.release()
+        if (wakeLock?.isHeld == true) {
+            try {
+                wakeLock?.release()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        wakeLock = null
 
-        // 停止前台服务
+        stopForegroundCompat()
+        stopSelf()
+
+        if (file == null || !file.exists() || start == null) {
+            return
+        }
+
+        val finalAudioFile = File(file.parent, file.name.replace("_in_progress", ""))
+        var renameOk = false
+        try {
+            renameOk = file.renameTo(finalAudioFile)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        val savedFile = if (renameOk) finalAudioFile else file
+        val endTime = Date()
+        val duration = endTime.time - start.time
+
+        serviceScope.launch {
+            try {
+                val repository = HuluwaRepository.getInstance(applicationContext)
+                val session = SleepSession(
+                    startTime = start,
+                    endTime = endTime,
+                    duration = duration,
+                    audioPath = savedFile.absolutePath
+                )
+                val sessionId = repository.insertSession(session)
+
+                val analyzer = AudioAnalyzer(applicationContext)
+                val events = analyzer.analyzeAudio(savedFile.absolutePath)
+                if (events.isNotEmpty()) {
+                    repository.insertEvents(events.map { it.copy(sessionId = sessionId) })
+                    val updatedSession = session.copy(eventCount = events.size)
+                    repository.insertSession(updatedSession)
+                }
+
+                onRecordingStopped?.invoke(sessionId)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    private fun stopForegroundCompat() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             stopForeground(STOP_FOREGROUND_REMOVE)
         } else {
             @Suppress("DEPRECATION")
             stopForeground(true)
-        }
-        stopSelf()
-
-        // 重命名临时文件为正式文件
-        val finalAudioFile = File(audioFile.parent, audioFile.name.replace("_in_progress", ""))
-        if (audioFile.exists()) {
-            audioFile.renameTo(finalAudioFile)
-        }
-
-        // 保存睡眠会话并分析音频
-        val endTime = Date()
-        val duration = endTime.time - startTime.time
-
-        serviceScope.launch {
-            val repository = HuluwaRepository.getInstance(applicationContext)
-            val session = SleepSession(
-                startTime = startTime,
-                endTime = endTime,
-                duration = duration,
-                audioPath = finalAudioFile.absolutePath
-            )
-            val sessionId = repository.insertSession(session)
-
-            // 分析音频
-            val analyzer = AudioAnalyzer(applicationContext)
-            val events = analyzer.analyzeAudio(finalAudioFile.absolutePath)
-            if (events.isNotEmpty()) {
-                repository.insertEvents(events.map { it.copy(sessionId = sessionId) })
-                // 更新会话的事件数量
-                val updatedSession = session.copy(eventCount = events.size)
-                repository.insertSession(updatedSession)
-            }
-
-            // 回调通知录音完成
-            onRecordingStopped?.invoke(sessionId)
         }
     }
 
@@ -209,7 +248,11 @@ class RecordingService : Service() {
             onRecordingStopped = callback
             val intent = Intent(context, RecordingService::class.java)
             intent.action = ACTION_STOP
-            context.startService(intent)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
         }
     }
 }
