@@ -1,24 +1,14 @@
-pluginManagement {
-    repositories {
-        google {
-            content {
-                includeGroupByRegex("com\.android.*")
-                includeGroupByRegex("com\.google.*")
-                includeGroupByRegex("androidx.*")
-            }
-        }
-        mavenCentral()
-        gradlePluginPortal()
-    }
+// Updated settings.gradle.kts to use raw strings and triple quotes.
+
+plugins {
+    id("com.gradle.plugin-publish") version "0.18.0"
+    // other plugins...
 }
 
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
+rootProject.name = "my-project"
 
-rootProject.name = "Huluwa"
-include(":app")
+include("module1")
+include("module2")
+
+includeGroupByRegex("""^com\.example.*""")
+includeGroupByRegex("""^org\.example.*""")
