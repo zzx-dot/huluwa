@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.TypeConverters
 import com.example.huluwa.data.dao.AudioEventDao
 import com.example.huluwa.data.dao.AppSettingDao
 import com.example.huluwa.data.dao.SleepSessionDao
@@ -16,6 +17,7 @@ import com.example.huluwa.data.entity.SleepSession
     version = 1,
     exportSchema = false
 )
+@TypeConverters(DateTypeConverter::class)
 abstract class HuluwaDatabase : RoomDatabase() {
     abstract fun sleepSessionDao(): SleepSessionDao
     abstract fun audioEventDao(): AudioEventDao

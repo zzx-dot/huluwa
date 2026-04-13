@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.example.huluwa.data.HuluwaRepository
+import com.example.huluwa.data.entity.SleepSession
 import com.example.huluwa.navigation.Screen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -31,11 +32,11 @@ import kotlinx.coroutines.withContext
 @Composable
 fun HomeScreen(navController: NavController) {
     val context = LocalContext.current
-    val repository = HuluwaRepository.getInstance(context)
-    val latestSession = remember { mutableStateOf(repository.getLatestSession()) }
+    val latestSession = remember { mutableStateOf<SleepSession?>(null) }
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
+            val repository = HuluwaRepository.getInstance(context)
             latestSession.value = repository.getLatestSession()
         }
     }

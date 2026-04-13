@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -29,21 +30,24 @@ import androidx.navigation.NavController
 import com.example.huluwa.analysis.AudioAnalyzer
 import com.example.huluwa.data.HuluwaRepository
 import com.example.huluwa.data.entity.AudioEvent
+import com.example.huluwa.data.entity.SleepSession
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ResultScreen(navController: NavController, sessionId: Long) {
     val context = LocalContext.current
-    val repository = HuluwaRepository.getInstance(context)
-    val session = remember { mutableStateOf(repository.getSessionById(sessionId)) }
+    val session = remember { mutableStateOf<SleepSession?>(null) }
     val events = remember { mutableStateOf<List<AudioEvent>>(emptyList()) }
     val volumeThreshold = remember { mutableStateOf(60f) }
     val isAnalyzing = remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(sessionId) {
         withContext(Dispatchers.IO) {
+            val repository = HuluwaRepository.getInstance(context)
             session.value = repository.getSessionById(sessionId)
             events.value = repository.getEventsBySessionId(sessionId)
         }
@@ -129,14 +133,17 @@ fun ResultScreen(navController: NavController, sessionId: Long) {
             // 重新分析按钮
             Button(
                 onClick = {
-                    isAnalyzing.value = true
-                    // 重新分析音频
-                    val analyzer = AudioAnalyzer(context)
-                    session.value?.let {
-                        val newEvents = analyzer.analyzeAudio(it.audioPath)
-                        events.value = newEvents
+                    coroutineScope.launch {
+                        isAnalyzing.value = true
+                        withContext(Dispatchers.IO) {
+                            val analyzer = AudioAnalyzer(context)
+                            session.value?.let {
+                                val newEvents = analyzer.analyzeAudio(it.audioPath)
+                                events.value = newEvents
+                            }
+                        }
+                        isAnalyzing.value = false
                     }
-                    isAnalyzing.value = false
                 },
                 modifier = Modifier
                     .padding(bottom = 16.dp)
